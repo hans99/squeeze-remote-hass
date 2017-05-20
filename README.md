@@ -10,4 +10,6 @@ Known limitations:
  - Menues sometimes get mixed
  - Menues are not updated without going back and forward
 
+Add the repository URL https://hans99.github.io/slim/repo.xml
+
 License information is found in the LICENSE file.

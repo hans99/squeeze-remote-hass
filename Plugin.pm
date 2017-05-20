@@ -15,7 +15,7 @@ use Plugins::Assistant::HASS;
 my $log = Slim::Utils::Log->addLogCategory(
 	{
 		'category'     => 'plugin.assistant',
-		'defaultLevel' => 'DEBUG',
+		'defaultLevel' => 'ERROR',
 		'description'  => 'PLUGIN_ASSISTANT',
 	}
 );
