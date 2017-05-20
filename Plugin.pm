@@ -137,7 +137,7 @@ sub getItems {
 								state => $entity->{'state'},
 							}
 						],
-						nextWindow => 'refresh',
+						#nextWindow => 'refresh',
 					  };
 
 				} elsif ($namespace eq 'sensor' && !defined $args->{'onlygroups'}) {
