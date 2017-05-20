@@ -1,0 +1,20 @@
+<?xml version='1.0' standalone='yes'?>
+<extension>
+  <name>PLUGIN_ASSISTANT</name>
+  <creator>Hans Karlinius</creator>
+  <defaultState>enabled</defaultState>
+  <needsMySB>false</needsMySB>
+  <description>PLUGIN_ASSISTANT_DESCRIPTION</description>
+  <email>hans.karlinius@live.com</email>
+  <icon>plugins/Assistant/html/images/icon.png</icon>
+  <id>517d7aef-1bfa-49a2-b4ed-b0117d997531</id>
+  <module>Plugins::Assistant::Plugin</module>
+  <optionsURL>plugins/Assistant/settings.html</optionsURL>
+  <targetApplication>
+    <id>Logitech Media Server</id>
+    <maxVersion>*</maxVersion>
+    <minVersion>7.6</minVersion>
+  </targetApplication>
+  <type>2</type>
+  <version>0.1</version>
+</extension>

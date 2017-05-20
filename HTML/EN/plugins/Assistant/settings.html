@@ -1,0 +1,11 @@
+[% PROCESS settings/header.html %]
+
+	[% WRAPPER setting title="PLUGIN_ASSISTANT_CONNECT" desc="PLUGIN_ASSISTANT_CONNECT_DESC" %]
+		<input type="text" name="pref_connect" value="[% prefs.connect == '_assistant_' ? '' : prefs.connect %]" size="40">
+	[% END %]
+
+	[% WRAPPER setting title="PLUGIN_ASSISTANT_PASS" desc="PLUGIN_ASSISTANT_PASS_DESC" %]
+		<input type="text" name="pref_pass" value="[% prefs.pass == '_pass_' ? '' : prefs.pass %]">
+	[% END %]
+
+[% PROCESS settings/footer.html %]
