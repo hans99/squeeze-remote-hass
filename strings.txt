@@ -2,13 +2,19 @@ PLUGIN_ASSISTANT
 	EN	Assistant
 
 PLUGIN_ASSISTANT_DESCRIPTION
-	EN	This is good
+	EN	Remote controlling entities in Home Assistant.
 
 PLUGIN_ASSISTANT_CONNECT
 	EN	Home Assistant connect url
 
 PLUGIN_ASSISTANT_CONNECT_DESC
 	EN	Should be the same as used for web access with addition of /api at the end like http://localhost:8123/api
+
+PLUGIN_ASSISTANT_SHOW_HOME
+	EN	Show "home" in menu
+
+PLUGIN_ASSISTANT_SHOW_HOME_DESC
+	EN	By not showing "home" only groups will be shown for a cleaner looking menu.
 
 PLUGIN_ASSISTANT_PASS
 	EN	Home Assistant API password

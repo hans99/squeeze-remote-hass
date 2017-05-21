@@ -4,7 +4,6 @@ use strict;
 use base qw(Slim::Plugin::OPMLBased);
 use JSON::XS::VersionOneAndTwo;
 use threads::shared;
-use feature qw(switch);
 
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
@@ -28,16 +27,6 @@ my $cache = Slim::Utils::Cache->new('assistant', 3);
 sub initPlugin {
 	my $class = shift;
 
-	if (my $username = $prefs->get('connect')) {
-		$prefs->set('connect', '') if $username eq '_assistant_';
-	}
-
-	$prefs->init(
-		{
-			connect => '_assistant_'
-		}
-	);
-
 	Plugins::Assistant::HASS->init($cache);
 
 	$class->SUPER::initPlugin(
@@ -56,6 +45,7 @@ sub initPlugin {
 
 sub getDisplayName { 'PLUGIN_ASSISTANT' }
 
+
 # don't add this plugin to the Extras menu
 sub playerMenu {}
 
@@ -66,7 +56,9 @@ sub handleFeed {
 	my $params = $args->{params};
 
 	# Only groups in first level
-	$args->{'onlygroups'} = 1;
+	if (defined $prefs->get('show_home') && $prefs->get('show_home') == 1) {
+		$args->{'showhome'} = $prefs->get('show_home');
+	}
 
 	getItems($client,$cb,$params,$args);
 }
@@ -122,10 +114,9 @@ sub getItems {
 						]
 					  };
 
-				} elsif ($namespace eq 'light' && !defined $args->{'onlygroups'}) {
+				} elsif ($namespace eq 'light' && defined $args->{'showhome'}) {
 
-					push @$items,
-					  {
+					push @$items,{
 						name => $entity->{'attributes'}->{'friendly_name'},
 						image => 'plugins/Assistant/html/images/light_'.$entity->{'state'}.'.png',
 						order => $order,
@@ -137,10 +128,11 @@ sub getItems {
 								state => $entity->{'state'},
 							}
 						],
-						#nextWindow => 'refresh',
-					  };
 
-				} elsif ($namespace eq 'sensor' && !defined $args->{'onlygroups'}) {
+						#nextWindow => 'refresh',
+					};
+
+				} elsif ($namespace eq 'sensor' && defined $args->{'showhome'}) {
 
 					push @$items,
 					  {
@@ -149,7 +141,7 @@ sub getItems {
 						type => 'text',
 					  };
 
-				} elsif (!defined $args->{'onlygroups'}) {
+				} elsif (defined $args->{'showhome'}) {
 
 					push @$items,
 					  {

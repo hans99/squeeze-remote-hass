@@ -9,30 +9,47 @@ use Slim::Utils::Log;
 use Slim::Utils::Prefs;
 
 my $log = logger('plugin.assistant');
-
-my $url;
 my $cache;
-
 my $prefs = preferences('plugin.assistant');
 
 
 sub init {
 	($cache) = @_;
-
-	$url = $prefs->get('connect');
-
-	#$pass = $prefs->get('pass');
 }
 
 
-sub testHass {
+sub testHassConnection {
+	my ( $client, $cb, $params, $args ) = @_;
 
-	# TODO:
-	# empty api request
-	# if response message = "API running." then return true
-	# show in settings
+	if (defined $prefs->get('connect')) {
+		my $http = Slim::Networking::SimpleAsyncHTTP->new(
+			sub {
+				$log->info("Connected to Home Assistant at (".$prefs->get('connect').")");
+			},
+			sub {
+				$log->warn("Warning (".$prefs->get('connect')."): $_[1]");
+			},
+			{
+				timeout => 5,
+			},
+		);
+
+		$http->get(
+			$prefs->get('connect'),
+			'Content-Type' => 'application/json',
+			'charset' => 'UTF-8',
+			access(),
+		);
+	}
 }
 
+sub access() {
+	if ($prefs->get('pass')) {
+		$log->debug('PASS');
+		return 'x-ha-access' => $prefs->get('pass');
+	}
+	return !defined;
+}
 
 sub getEntities {
 	my ( $client, $cb, $params, $args ) = @_;
@@ -83,7 +100,7 @@ sub getEntities {
 sub getEntity {
 	my ($client, $cb, $params, $args) = @_;
 
-	my $localurl = $url.'states';
+	my $localurl = $prefs->get('connect').'states';
 	if (defined $args->{'entity_id'}) {
 		$localurl = $localurl.'/'.$args->{'entity_id'};
 	}
@@ -114,6 +131,7 @@ sub getEntity {
 		$localurl,
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
+		access(),
 	);
 }
 
@@ -121,7 +139,7 @@ sub getEntity {
 sub toggleLightEntity {
 	my ($client, $cb, $params, $args) = @_;
 
-	my $localurl = $url.'services/light/toggle';
+	my $localurl = $prefs->get('connect').'services/light/toggle';
 	my $req->{'entity_id'} = $args->{'entity_id'};
 
 	my $http = Slim::Networking::SimpleAsyncHTTP->new(
@@ -147,7 +165,8 @@ sub toggleLightEntity {
 		$localurl,
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
-		encode_json($req)
+		encode_json($req),
+		access(),
 	);
 }
 
