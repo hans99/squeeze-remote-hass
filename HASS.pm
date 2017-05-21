@@ -27,7 +27,7 @@ sub testHassConnection {
 				$log->info("Connected to Home Assistant at (".$prefs->get('connect').")");
 			},
 			sub {
-				$log->warn("Warning (".$prefs->get('connect')."): $_[1]");
+				$log->error("Error (".$prefs->get('connect')."): $_[1]");
 			},
 			{
 				timeout => 5,
@@ -36,20 +36,13 @@ sub testHassConnection {
 
 		$http->get(
 			$prefs->get('connect'),
+			'x-ha-access' => $prefs->get('pass'),
 			'Content-Type' => 'application/json',
 			'charset' => 'UTF-8',
-			access(),
 		);
 	}
 }
 
-sub access() {
-	if ($prefs->get('pass')) {
-		$log->debug('PASS');
-		return 'x-ha-access' => $prefs->get('pass');
-	}
-	return !defined;
-}
 
 sub getEntities {
 	my ( $client, $cb, $params, $args ) = @_;
@@ -118,7 +111,7 @@ sub getEntity {
 			$cb->($result);
 		},
 		sub {
-			$log->warn("Warning (".$localurl."): $_[1]");
+			$log->error("Error (".$localurl."): $_[1]");
 			$cb->();
 		},
 		{
@@ -129,9 +122,9 @@ sub getEntity {
 
 	$http->get(
 		$localurl,
+		'x-ha-access' => $prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
-		access(),
 	);
 }
 
@@ -153,7 +146,7 @@ sub toggleLightEntity {
 			$cb->($result);
 		},
 		sub {
-			$log->error("error: $_[1]");
+			$log->error("Error (".$localurl."): $_[1]");
 			$cb->();
 		},
 		{
@@ -163,10 +156,10 @@ sub toggleLightEntity {
 
 	$http->post(
 		$localurl,
+		'x-ha-access' => $prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
 		encode_json($req),
-		access(),
 	);
 }
 
