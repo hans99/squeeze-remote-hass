@@ -29,7 +29,7 @@ sub handler {
 	if ( $params->{saveSettings} ) {
 		$prefs->set('connect', $params->{pref_connect});
 		$prefs->set('pass', $params->{pref_pass});
-		$prefs->set('pref_show_home', $params->{pref_show_home});
+		$prefs->set('show_home', $params->{pref_show_home});
 		$prefs->savenow();
 	}
 
