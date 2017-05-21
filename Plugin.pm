@@ -56,8 +56,8 @@ sub handleFeed {
 	my $params = $args->{params};
 
 	# Only groups in first level
-	if (defined $prefs->get('show_home') && $prefs->get('show_home') == 1) {
-		$args->{'showhome'} = $prefs->get('show_home');
+	if (!defined $prefs->get('show_home') || $prefs->get('show_home') == 0) {
+		$args->{'hidehome'} = 1;
 	}
 
 	getItems($client,$cb,$params,$args);
@@ -114,7 +114,7 @@ sub getItems {
 						]
 					  };
 
-				} elsif ($namespace eq 'light' && defined $args->{'showhome'}) {
+				} elsif ($namespace eq 'light' && !defined $args->{'hidehome'}) {
 
 					push @$items,{
 						name => $entity->{'attributes'}->{'friendly_name'},
@@ -132,7 +132,7 @@ sub getItems {
 						#nextWindow => 'refresh',
 					};
 
-				} elsif ($namespace eq 'sensor' && defined $args->{'showhome'}) {
+				} elsif ($namespace eq 'sensor' && !defined $args->{'hidehome'}) {
 
 					push @$items,
 					  {
@@ -141,7 +141,7 @@ sub getItems {
 						type => 'text',
 					  };
 
-				} elsif (defined $args->{'showhome'}) {
+				} elsif (!defined $args->{'hidehome'}) {
 
 					push @$items,
 					  {
