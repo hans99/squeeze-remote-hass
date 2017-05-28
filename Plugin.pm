@@ -20,7 +20,6 @@ my $log = Slim::Utils::Log->addLogCategory(
 );
 
 my $prefs = preferences('plugin.assistant');
-
 my $cache = Slim::Utils::Cache->new('assistant', 3);
 
 
@@ -53,103 +52,28 @@ sub playerMenu {}
 sub handleFeed {
 	my ($client, $cb, $args) = @_;
 
-	my $params = $args->{params};
-
-	# Only groups in first level
-	if (!defined $prefs->get('show_home') || $prefs->get('show_home') == 0) {
-		$args->{'hidehome'} = 1;
-	}
-
-	getItems($client,$cb,$params,$args);
-}
-
-
-sub getItems {
-	my ($client, $cb, $params, $args) = @_;
-
 	Plugins::Assistant::HASS::getEntities(
 		$client,
 		sub {
-			my $entities = shift;
+			my $tentities = shift;
+			my %entities;
 			my $items = [];
+			my $order = 1000;
 
-			foreach my $entity(@$entities) {
-				my ($namespace, $name) = split('\.', $entity->{'entity_id'}, 2);
+			foreach my $tentity(@$tentities) {
+				$entities{$tentity->{'entity_id'}} = $tentity;
+			}
 
-				my $order = 999;
-				if (defined $entity->{'attributes'}->{'order'}) {
-					$order = $entity->{'attributes'}->{'order'};
-				}
+			foreach my $id(keys %entities) {
 
-				# If current entity is included in args and this is a group,
-				# change namespace to the namespace of all sub entities
-				# Note: Currently only light is supported
-				if ($namespace eq 'group' && $entity->{'entity_id'} eq $args->{'entity_id'}) {
-					$namespace = 'light';
-				}
+				my ($namespace, $name) = split('\.', $id, 2);
+				if (($namespace eq 'group' && (!$entities{$id}->{'attributes'}->{'hidden'} || $entities{$id}->{'attributes'}->{'view'}))
+					|| $prefs->get('show_home') == 1) {
 
-				$log->debug('Namespace: ', $namespace, ' Name: ', $name, ' - ', $order);
-
-				if ($namespace eq 'group' && (!$entity->{'attributes'}->{'hidden'} || $entity->{'attributes'}->{'view'})) {
-
-					# Add current to request list if all sub entities the same
-					# Add current entity id to args
-					# Note: Currently only light is supported
-					my $entity_ids = $entity->{'attributes'}->{'entity_id'};
-					if (!grep(!/light\./, @{$entity_ids})) {
-						push @$entity_ids, $entity->{'entity_id'};
-					}
-
-					push @$items,
-					  {
-						name => $entity->{'attributes'}->{'friendly_name'},
-						order => $order,
-						type => 'link',
-						url  => \&getItems,
-						passthrough => [
-							{
-								entity_id => $entity->{'entity_id'},
-								entity_ids => $entity_ids,
-							}
-						]
-					  };
-
-				} elsif ($namespace eq 'light' && !defined $args->{'hidehome'}) {
-
-					push @$items,{
-						name => $entity->{'attributes'}->{'friendly_name'},
-						image => 'plugins/Assistant/html/images/light_'.$entity->{'state'}.'.png',
-						order => $order,
-						type => 'link',
-						url  => \&toggleLightEntity,
-						passthrough => [
-							{
-								entity_id => $entity->{'entity_id'},
-								state => $entity->{'state'},
-							}
-						],
-
-						#nextWindow => 'refresh',
-					};
-
-				} elsif ($namespace eq 'sensor' && !defined $args->{'hidehome'}) {
-
-					push @$items,
-					  {
-						name => $entity->{'attributes'}->{'friendly_name'}.' '.$entity->{'state'}.$entity->{'attributes'}->{'unit_of_measurement'},
-						order => $order,
-						type => 'text',
-					  };
-
-				} elsif (!defined $args->{'hidehome'}) {
-
-					push @$items,
-					  {
-						name => $entity->{'attributes'}->{'friendly_name'}.' '.$entity->{'state'},
-						order => $order,
-						type => 'text',
-					  };
-
+					my $item = getItem($id, %entities);
+					$item->{'order'} = $order++ if (!defined $item->{'order'});
+					$log->debug('Namespace: ', $namespace, ' Name: ', $name, ' - ', $item->{'name'}, ' - ', $item->{'order'});
+					push @$items, $item;
 				}
 			}
 			$items = [ sort { uc($a->{order}) cmp uc($b->{order}) } @$items ];
@@ -159,11 +83,87 @@ sub getItems {
 				}
 			);
 		},
-		$params,
-		{
-			entity_ids => $args->{'entity_ids'},
-		},
+		$args,
 	);
+}
+
+
+sub getItem {
+	my ($id, %entities) = @_;
+	my ($namespace, $name) = split('\.', $id, 2);
+
+	$log->debug('Namespace: ', $namespace, ' Name: ', $name);
+
+	if ($namespace eq 'group') {
+
+		my $gorder = 2000;
+		my $gitems = [];
+
+		# Add current to request list if all sub entities the same
+		# Add current entity id to args
+		# Note: Currently only light is supported
+		if (!grep(!/light\./, @{$entities{$id}->{'attributes'}->{'entity_id'}})) {
+
+			my $tid = 'light.'.$name;
+			if (!defined $entities{$tid}) {
+				$entities{$tid} = $entities{$id};
+			}
+			if (!grep(/$tid/, @{$entities{$id}->{'attributes'}->{'entity_id'}})) {
+				push @{$entities{$id}->{'attributes'}->{'entity_id'}}, $tid;
+			}
+		}
+
+		foreach my $gid(@{$entities{$id}->{'attributes'}->{'entity_id'}}) {
+			my $gitem = getItem($gid, %entities);
+			$gitem->{'order'} = $gorder++ if (!defined $gitem->{'order'});
+			$log->debug('Namespace: ', $namespace, ' Name: ', $name, ' - ', $gitem->{'name'}, ' - ', $gitem->{'order'});
+			push @$gitems, $gitem;
+		}
+		$gitems = [ sort { uc($a->{order}) cmp uc($b->{order}) } @$gitems ];
+
+		return {
+			name => $entities{$id}->{'attributes'}->{'friendly_name'}.' '.$entities{$id}->{'state'},
+			order => $entities{$id}->{'attributes'}->{'order'},
+			type => 'link',
+			items => $gitems,
+		};
+
+	} elsif ($namespace eq 'light') {
+
+		return {
+			name => $entities{$id}->{'attributes'}->{'friendly_name'},
+			image => 'plugins/Assistant/html/images/light_'.$entities{$id}->{'state'}.'.png',
+			order => $entities{$id}->{'attributes'}->{'order'},
+			type => 'link',
+			url  => \&toggleLightEntity,
+			nextWindow => 'refresh',
+			passthrough => [
+				{
+					entity_id => $entities{$id}->{'entity_id'},
+					state => $entities{$id}->{'state'},
+				}
+			]
+		};
+
+	} elsif ($namespace eq 'sensor') {
+
+		my $name = $entities{$id}->{'attributes'}->{'friendly_name'}.' '.$entities{$id}->{'state'}.$entities{$id}->{'attributes'}->{'unit_of_measurement'};
+		$name =~ s/\R//g;
+
+		return {
+			name => $name,
+			order => $entities{$id}->{'attributes'}->{'order'},
+			type => 'text',
+		};
+
+	} else {
+
+		return {
+			name => $entities{$id}->{'attributes'}->{'friendly_name'}.' '.$entities{$id}->{'state'},
+			order => $entities{$id}->{'attributes'}->{'order'},
+			type => 'text',
+		};
+	}
 }
 
 
