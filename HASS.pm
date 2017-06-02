@@ -5,6 +5,7 @@ use JSON::XS::VersionOneAndTwo;
 use threads::shared;
 
 use Slim::Networking::SimpleAsyncHTTP;
+use Slim::Networking::SqueezeNetwork;
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
 
@@ -129,11 +130,14 @@ sub getEntity {
 }
 
 
-sub toggleLightEntity {
+sub services {
 	my ($client, $cb, $params, $args) = @_;
 
-	my $localurl = $prefs->get('connect').'services/light/toggle';
+
+	my $url = $prefs->get('connect').'services/'.$args->{'domain'}.'/'.$args->{'service'};
 	my $req->{'entity_id'} = $args->{'entity_id'};
+
+	$log->debug($url.' { '.$req->{'entity_id'}.' }');
 
 	my $http = Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
@@ -141,12 +145,13 @@ sub toggleLightEntity {
 			my $params   = $response->params('params');
 			my $result;
 			if ( $response->headers->content_type =~ /json/ ) {
+				$log->debug($response->content);
 				$result = decode_json($response->content);
 			}
-			$cb->($result);
+			$cb->($client, $result, $params, $args);
 		},
 		sub {
-			$log->error("Error (".$localurl."): $_[1]");
+			$log->error("Error (".$url."): $_[1]");
 			$cb->();
 		},
 		{
@@ -155,12 +160,14 @@ sub toggleLightEntity {
 	);
 
 	$http->post(
-		$localurl,
+		$url,
 		'x-ha-access' => $prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
 		encode_json($req),
 	);
+
 }
+
 
 1;
