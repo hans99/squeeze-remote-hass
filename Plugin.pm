@@ -73,7 +73,7 @@ sub handleFeed {
 
 					my $item = getItem($id);
 					$item->{'order'} = $order++ if (!defined $item->{'order'});
-					$log->debug('Namespace: ', $namespace, ' Name: ', $name, ' - ', $item->{'name'}, ' - ', $item->{'order'});
+					$log->debug('getEntities: '.$id.' - '.$item->{'name'}.' - '.$item->{'order'});
 					push @$items, $item;
 				}
 			}
@@ -94,7 +94,7 @@ sub getItem {
 	my ($id) = @_;
 	my ($namespace, $name) = split('\.', $id, 2);
 
-	$log->debug('Namespace: ', $namespace, ' Name: ', $name);
+	$log->debug($id);
 
 	if ($namespace eq 'group') {
 
@@ -107,20 +107,17 @@ sub getItem {
 		if (!grep(!/light\./, @{$entities{$id}->{'attributes'}->{'entity_id'}})) {
 
 			$namespace = 'light';
-			my $tid = 'light.'.$name;
-			if (!defined $entities{$tid}) {
-				$entities{$tid} = $entities{$id};
-			}
-			if (!grep(/$tid/, @{$entities{$id}->{'attributes'}->{'entity_id'}})) {
-				push @{$entities{$id}->{'attributes'}->{'entity_id'}}, $tid;
-			}
+
+			my $tid = $namespace.'.'.$name;
+			$entities{$tid} = $entities{$id};
+			push @{$entities{$id}->{'attributes'}->{'entity_id'}}, $tid;
 		}
 
 		foreach my $gid(@{$entities{$id}->{'attributes'}->{'entity_id'}}) {
 			my $gitem = getItem($gid, %entities);
 			$gitem->{'order'} = $gorder++ if (!defined $gitem->{'order'});
 
-			$log->debug('Namespace: ', $namespace, ' Name: ', $name, ' - ', $gitem->{'name'}, ' - ', $gitem->{'order'});
+			$log->debug($id.' - '.$gitem->{'name'}.' - '.$gitem->{'order'});
 			push @$gitems, $gitem;
 		}
 		$gitems = [ sort { uc($a->{order}) cmp uc($b->{order}) } @$gitems ];
