@@ -94,12 +94,12 @@ sub getEntities {
 sub getEntity {
 	my ($client, $cb, $params, $args) = @_;
 
-	my $localurl = $prefs->get('connect').'states';
+	my $url = $prefs->get('connect').'states';
 	if (defined $args->{'entity_id'}) {
-		$localurl = $localurl.'/'.$args->{'entity_id'};
+		$url = $url.'/'.$args->{'entity_id'};
 	}
 
-	$log->debug('Get Entity: ', $localurl);
+	$log->debug('Get Entity: ', $url);
 
 	my $http = Slim::Networking::SimpleAsyncHTTP->new(
 		sub {
@@ -112,7 +112,7 @@ sub getEntity {
 			$cb->($result);
 		},
 		sub {
-			$log->error("Error (".$localurl."): $_[1]");
+			$log->error("Error (".$url."): $_[1]");
 			$cb->();
 		},
 		{
@@ -122,7 +122,7 @@ sub getEntity {
 	);
 
 	$http->get(
-		$localurl,
+		$url,
 		'x-ha-access' => $prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
