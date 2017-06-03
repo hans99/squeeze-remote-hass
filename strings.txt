@@ -8,7 +8,7 @@ PLUGIN_ASSISTANT_CONNECT
 	EN	Home Assistant connect url
 
 PLUGIN_ASSISTANT_CONNECT_DESC
-	EN	Should be the same as used for web access with addition of /api at the end like http://localhost:8123/api
+	EN	Should be the same as used for web access with addition of /api/ at the end like http://localhost:8123/api/
 
 PLUGIN_ASSISTANT_SHOW_HOME
 	EN	Show "home" in menu
