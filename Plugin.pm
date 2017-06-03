@@ -130,11 +130,11 @@ sub getItem {
 			items => $gitems,
 		};
 
-	} elsif ($namespace eq 'light') {
+	} elsif ($namespace eq 'light' || $namespace eq 'switch') {
 
 		return {
 			name => $entities{$id}->{'attributes'}->{'friendly_name'},
-			image => 'plugins/Assistant/html/images/light_'.$entities{$id}->{'state'}.'.png',
+			image => 'plugins/Assistant/html/images/'.$namespace.'_'.$entities{$id}->{'state'}.'.png',
 			order => $entities{$id}->{'attributes'}->{'order'},
 			nextWindow => 'refresh',
 			type => 'link',
@@ -144,6 +144,31 @@ sub getItem {
 					entity_id => $entities{$id}->{'entity_id'},
 					domain => $namespace,
 					service => $entities{$id}->{'state'} eq 'on' ? 'turn_off' : 'turn_on',
+				}
+			],
+		};
+
+	} elsif ($namespace eq 'cover') {
+
+		my $service = 'stop_cover';
+		if ($entities{$id}->{'state'} eq 'closed') {
+			$service = 'open_cover';
+		} elsif ($entities{$id}->{'state'} eq 'open') {
+			$service = 'close_cover';
+		}
+
+		return {
+			name => $entities{$id}->{'attributes'}->{'friendly_name'},
+			image => 'plugins/Assistant/html/images/'.$namespace.'_'.$entities{$id}->{'state'}.'.png',
+			order => $entities{$id}->{'attributes'}->{'order'},
+			nextWindow => 'refresh',
+			type => 'link',
+			url  => \&servicesCall,
+			passthrough => [
+				{
+					entity_id => $entities{$id}->{'entity_id'},
+					domain => $namespace,
+					service => $service,
 				}
 			],
 		};
