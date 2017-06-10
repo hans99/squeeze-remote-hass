@@ -7,6 +7,7 @@ This is a Plugin for Squeezebox server where you can control entities in Home As
 - Lights on/off
 - Cover open/close
 - Switch on/off
+- Generic entity to handle group
 
 ## Tested on
 

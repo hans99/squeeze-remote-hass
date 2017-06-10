@@ -1,3 +1,7 @@
+#### Version 0.8
+##### Added
+- Add entity to handle group with common domain
+
 #### Version 0.7
 ##### Fixed
 - Settings info example proper url
