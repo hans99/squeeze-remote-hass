@@ -37,7 +37,7 @@ sub testHassConnection {
 
 		$http->get(
 			$prefs->get('connect'),
-			'x-ha-access' => $prefs->get('pass'),
+			'Authorization' => "Bearer ".$prefs->get('pass'),
 			'Content-Type' => 'application/json',
 			'charset' => 'UTF-8',
 		);
@@ -123,7 +123,7 @@ sub getEntity {
 
 	$http->get(
 		$url,
-		'x-ha-access' => $prefs->get('pass'),
+		'Authorization' => "Bearer ".$prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
 	);
@@ -161,7 +161,7 @@ sub services {
 
 	$http->post(
 		$url,
-		'x-ha-access' => $prefs->get('pass'),
+		'Authorization' => "Bearer ".$prefs->get('pass'),
 		'Content-Type' => 'application/json',
 		'charset' => 'UTF-8',
 		encode_json($req),
