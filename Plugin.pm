@@ -2,255 +2,221 @@ package Plugins::Assistant::Plugin;
 
 use strict;
 use base qw(Slim::Plugin::OPMLBased);
+
 use JSON::XS::VersionOneAndTwo;
-use threads::shared;
+use Data::Dumper;
 
 use Slim::Utils::Log;
-use Slim::Utils::OSDetect;
 use Slim::Utils::Prefs;
 use Slim::Utils::Strings qw(string cstring);
 
-use Plugins::Assistant::HASS;
+use Plugins::Assistant::API;
+use Plugins::Assistant::Handlers;
 
 use constant IMAGE_PATH => 'plugins/Assistant/html/images/';
-use constant IMAGE_UNKNOWN => 'group_unknown';
 
 my $log = Slim::Utils::Log->addLogCategory(
 	{
 		'category'     => 'plugin.assistant',
-		'defaultLevel' => 'ERROR',
+		'defaultLevel' => 'INFO',
 		'description'  => 'PLUGIN_ASSISTANT',
 	}
 );
 
 my $prefs = preferences('plugin.assistant');
-my $cache = Slim::Utils::Cache->new('assistant', 3);
-my %entities;
-my @images = ('cover_closed', 'cover_open', 'group_on', 'group_off', 'group_unknown', 'light_off', 'light_on', 'switch_off', 'switch_on');
 
+my $menuItems;
+my @domains = ('light', 'switch', 'cover');
 
 sub initPlugin {
 	my $class = shift;
-
-	Plugins::Assistant::HASS->init($cache);
-
-	$class->SUPER::initPlugin(
-		feed   => \&handleFeed,
-		tag    => 'assistant',
-		menu   => 'radios',
-		is_app => 1,
-		weight => 1,
-	);
 
 	if (main::WEBUI) {
 		require Plugins::Assistant::Settings;
 		Plugins::Assistant::Settings->new();
 	}
 
+	$class->SUPER::initPlugin(
+		feed   => \&handleFeed,
+		tag    => 'assistant',
+		menu   => 'apps',
+	);
+
+	if ($prefs->get('enabled')) {
+		require Plugins::Assistant::API;
+		Plugins::Assistant::API->init();
+
+		Slim::Utils::Timers::setTimer(
+			undef,
+			time() + 5,
+			\&Assistant,
+		);
+	}
+}
+
+sub shutdownPlugin {
+	main::DEBUGLOG && $log->is_debug && $log->debug('shutdown');
+	main::DEBUGLOG && $log->is_debug && $log->debug(Dumper(Plugins::Assistant::API->getStatus()));
+
+	Slim::Utils::Timers::killTimers(undef, \&Assistant);
+	Plugins::Assistant::API->shutdown();
 }
 
 sub getDisplayName { 'PLUGIN_ASSISTANT' }
 
-
-# don't add this plugin to the Extras menu
 sub playerMenu {}
 
+sub Assistant {
+	main::INFOLOG && $log->is_info && $log->info('Assistant');
+
+	eval {
+		Plugins::Assistant::API->getAreas(sub {
+			my $areas = shift;
+			my $jsAreas = decode_json($areas);
+			foreach my $area (@$jsAreas) {
+				main::DEBUGLOG && $log->is_debug && $log->debug("Area ", JSON::XS->new->pretty->encode($area));
+				push @$menuItems, {
+					name => $area->{name},
+					image => _imagePath($area->{picture}),
+					areaId => $area->{area_id},
+				};
+			};
+			foreach my $menuItem (@$menuItems) {
+				Plugins::Assistant::API->getEntities(sub {
+					my $entities = shift;
+					my @entitySubscriptions;
+					my $jsEntities = decode_json($entities)->{referenced_entities};
+					my $domain;
+					my $items = [];
+					foreach my $entity (@$jsEntities) {
+						$domain = substr($entity, 0, index($entity, '.')),
+						main::DEBUGLOG && $log->is_debug && $log->debug('Domain: ', $domain, ' - Entity: ', $entity);
+						next unless grep {$_ eq $domain} @domains;
+						push @entitySubscriptions, $entity;
+						push @$items, {
+							entity => $entity,
+							domain => $domain
+						}
+					}
+					if (@$items) {
+						$menuItem->{items} = $items;
+						main::DEBUGLOG && $log->is_debug && $log->debug('Entity subscriptions for ',$menuItem->{name} , ' - ', join ',', @entitySubscriptions);
+						Plugins::Assistant::API->subscribeEntities(\&AssistanEntity, @entitySubscriptions);
+					}
+				}, $menuItem->{areaId});
+			}
+		});
+		1;
+	} or do {
+		my $e = $@;
+		$log->error('Failed to getAreas: ', $e);
+
+		Slim::Utils::Timers::setTimer(
+			undef,
+			time() + 5,
+			\&Assistant,
+		);
+	}
+}
+
+sub AssistantAction {
+	my ($client, $cb, $params, $args) = @_;
+	main::DEBUGLOG && $log->is_debug && $log->debug('AssistantAction start ', JSON::XS->new->pretty->encode($args));
+
+	my $service = $Plugins::Assistant::Handlers::service{$args->{domain}}($args->{state});
+	my $actionRequest = {
+		domain => $args->{domain},
+		entity => $args->{entity},
+		service => $service
+	};
+
+	Plugins::Assistant::API->serviceAction (sub {
+		my $result = shift;
+		main::DEBUGLOG && $log->is_debug && $log->debug('AssistantAction sent ', $result);
+	}, $actionRequest);
+
+	$cb->();
+	return;
+}
+
+sub AssistanEntity {
+	my $entities = shift;
+	main::DEBUGLOG && $log->is_debug && $log->debug('AssistanEntity entities ', $entities);
+	my $decoded = JSON::XS->new->decode($entities);
+	return unless ref $decoded eq 'HASH';
+
+	my $key = (keys %{$decoded})[0];
+	main::DEBUGLOG && $log->is_debug && $log->debug('Handler key ', $key);
+	unless (ref($Plugins::Assistant::Handlers::entities{$key}) eq 'CODE') {
+		die "No handler for key: $key\n";
+	}
+	my $entities = $Plugins::Assistant::Handlers::entities{$key}($decoded);
+
+	foreach my $entity (@$entities) {
+		main::DEBUGLOG && $log->is_debug && $log->debug('Entity update ', JSON::XS->new->pretty->encode($entity));
+		my $found = 0;
+		foreach my $menuItem (@$menuItems) {
+			my $menuItemItems = $menuItem->{items};
+			foreach my $menuItemEntity (@$menuItemItems) {
+				if ($menuItemEntity->{entity} eq $entity->{entity}) {
+					$found = 1;
+					$menuItemEntity->{name} //= $entity->{name};
+					$menuItemEntity->{entityIcon} //= $entity->{icon};
+					$menuItemEntity->{state} = $entity->{state};
+					$menuItemEntity->{image} = _imageWithStatePath($menuItemEntity->{domain}, $entity->{state});
+					$menuItemEntity->{nextWindow} = 'parent';
+					$menuItemEntity->{type} = 'link';
+					$menuItemEntity->{url} = \&AssistantAction;
+					$menuItemEntity->{passthrough} = [{
+						entity => $entity->{entity},
+						domain => $menuItemEntity->{domain},
+						state => $entity->{state}
+					}];
+					$menuItemEntity->{fetched} = 0;
+					$log->debug('Updated menu item:');
+					$log->debug(Dumper($menuItemEntity));
+					last;
+				}
+			}
+			last if $found;
+		}
+	}
+}
 
 sub handleFeed {
 	my ($client, $cb, $args) = @_;
 
-	Plugins::Assistant::HASS::getEntities(
-		$client,
-		sub {
-			my $tentities = shift;
-
-			my $items = [];
-			my $order = 1000;
-
-			foreach my $tentity(@$tentities) {
-				$entities{$tentity->{'entity_id'}} = $tentity;
-			}
-
-			foreach my $id(keys %entities) {
-
-				my ($namespace, $name) = split('\.', $id, 2);
-				if (($namespace eq 'group' && (!$entities{$id}->{'attributes'}->{'hidden'} || $entities{$id}->{'attributes'}->{'view'}))
-					|| $prefs->get('show_home') == 1) {
-
-					my $item = getItem($id);
-					$item->{'order'} = $order++ if (!defined $item->{'order'});
-					$log->debug('getEntities: '.$id.' - '.$item->{'name'}.' - '.$item->{'order'});
-					push @$items, $item;
-				}
-			}
-			$items = [ sort { uc($a->{order}) cmp uc($b->{order}) } @$items ];
-			$cb->(
-				{
-					items => $items,
-				}
-			);
-		},
-		$args,
-	);
-}
-
-
-sub getItem {
-
-	my ($id) = @_;
-	my ($namespace, $name) = split('\.', $id, 2);
-
-	$log->debug($id);
-
-	if ($namespace eq 'group') {
-
-		my $gorder = 2000;
-		my $gitems = [];
-
-		# Add unique entity for group of same type excluded group
-		# As I do beleive is similar to what HASS does :)
-		my %seen;
-		my @uniqueGroup = grep {not $seen{$_}++ } map { /^(?!group)(\S*)\./ } @{$entities{$id}->{'attributes'}->{'entity_id'}};
-		if (scalar(@uniqueGroup) == 1) {
-
-			$namespace = @uniqueGroup[0];
-
-			my $tid = $namespace.'.'.$name;
-			$entities{$tid} = $entities{$id};
-			if (!grep(/$tid/, @{$entities{$id}->{'attributes'}->{'entity_id'}})) {
-				push @{$entities{$id}->{'attributes'}->{'entity_id'}}, $tid;
-			}
-		}
-
-		foreach my $gid(@{$entities{$id}->{'attributes'}->{'entity_id'}}) {
-
-			my $gitem = getItem($gid, %entities);
-
-			$gitem->{'order'} = $gorder++ if (!defined $gitem->{'order'});
-			$log->debug($id.' - '.$gitem->{'name'}.' - '.$gitem->{'order'});
-			push @$gitems, $gitem;
-		}
-		$gitems = [ sort { uc($a->{order}) cmp uc($b->{order}) } @$gitems ];
-
-		return {
-			name => $entities{$id}->{'attributes'}->{'friendly_name'},
-			image => getImage($namespace.'_'.$entities{$id}->{'state'}),
-			order => $entities{$id}->{'attributes'}->{'order'},
-			type => 'link',
-			items => $gitems,
-		};
-
-	} elsif ($namespace eq 'light' || $namespace eq 'switch') {
-
-		return {
-			name => $entities{$id}->{'attributes'}->{'friendly_name'},
-			image => getImage($namespace.'_'.$entities{$id}->{'state'}),
-			order => $entities{$id}->{'attributes'}->{'order'},
-			nextWindow => 'refresh',
-			type => 'link',
-			url  => \&servicesCall,
-			passthrough => [
-				{
-					entity_id => $entities{$id}->{'entity_id'},
-					domain => $namespace,
-					service => $entities{$id}->{'state'} eq 'on' ? 'turn_off' : 'turn_on',
-				}
-			],
-		};
-
-	} elsif ($namespace eq 'cover') {
-
-		my $service = 'stop_cover';
-
-		if ($entities{$id}->{'state'} eq 'closed') {
-			$service = 'open_cover';
-		} elsif ($entities{$id}->{'state'} eq 'open') {
-			$service = 'close_cover';
-		}
-
-		return {
-			name => $entities{$id}->{'attributes'}->{'friendly_name'},
-			image => getImage($namespace.'_'.$entities{$id}->{'state'}),
-			order => $entities{$id}->{'attributes'}->{'order'},
-			nextWindow => 'refresh',
-			type => 'link',
-			url  => \&servicesCall,
-			passthrough => [
-				{
-					entity_id => $entities{$id}->{'entity_id'},
-					domain => $namespace,
-					service => $service,
-				}
-			],
-		};
-
-	} elsif ($namespace eq 'sensor') {
-
-		my $name = $entities{$id}->{'attributes'}->{'friendly_name'}.' '.$entities{$id}->{'state'}.$entities{$id}->{'attributes'}->{'unit_of_measurement'};
-
-		$name =~ s/\R//g;
-
-		return {
-			name => $name,
-			order => $entities{$id}->{'attributes'}->{'order'},
-			type => 'text',
-		};
-
-	} else {
-
-		return {
-			name => $entities{$id}->{'attributes'}->{'friendly_name'}.' '.$entities{$id}->{'state'},
-			order => $entities{$id}->{'attributes'}->{'order'},
-			type => 'text',
-		};
+	if ($prefs->get('enabled') && $menuItems) {
+		$cb->({
+			items => $menuItems,
+		});
+		return;
 	}
+	die "Assistant is not enabled or something is wrong...";
 }
 
+sub _imagePath {
+	my ($image) = @_;
 
-sub getImage {
-	my ($img) = @_;
+	my $base = $prefs->get('connect') || '';
 
-	if (grep(/^$img$/, @images)) {
-		return IMAGE_PATH.$img.'.png';
-	} else {
-		return IMAGE_PATH.IMAGE_UNKNOWN.'.png';
+	unless ($base && $image) {
+		return Plugins::Assistant::Plugin->_pluginDataFor('icon');
 	}
+
+	main::DEBUGLOG && $log->is_debug && $log->debug(' ImagePath: ', $base.$image);
+	my $resize_url = Slim::Web::ImageProxy::proxiedImage($base.$image);
+	main::DEBUGLOG && $log->is_debug && $log->debug(' ImagePathResize: ', $resize_url);
+
+	return Slim::Web::ImageProxy::proxiedImage($base.$image);
 }
 
-
-sub servicesCall {
-	my ($client, $cb, $params, $args) = @_;
-
-	Plugins::Assistant::HASS::services(
-		$client,
-		sub {
-			my ($client, $result, $params, $args) = @_;
-			my $newstate = '';
-
-			foreach my $entity (@$result) {
-				if ($entity->{'entity_id'} eq $args->{'entity_id'}) {
-					$newstate = $entity->{'state'};
-				}
-			}
-
-			my $items = [];
-
-			push @$items,
-			  {
-				name        => $entities{$args->{'entity_id'}}->{'attributes'}->{'friendly_name'}.' '.$newstate,
-				type        => 'text',
-				showBriefly => 1,
-			  };
-			$cb->(
-				{
-					items => $items,
-				}
-			);
-		},
-		$params,
-		$args,
-	);
+sub _imageWithStatePath {
+	my ($domain, $state) = @_;
+	my $path;
+	unless ($domain && $state) { return; }
+	main::DEBUGLOG && $log->is_debug && $log->debug(' ImageWithStatePath: ', IMAGE_PATH.$domain.'_'.$state.'.png');
+	return IMAGE_PATH.$domain.'_'.$state.'.png';
 }
-
 
 1;

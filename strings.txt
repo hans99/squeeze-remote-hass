@@ -5,16 +5,16 @@ PLUGIN_ASSISTANT_DESCRIPTION
 	EN	Remote controlling entities in Home Assistant.
 
 PLUGIN_ASSISTANT_CONNECT
-	EN	Home Assistant connect url
+	EN	Home Assistant connect URL
 
 PLUGIN_ASSISTANT_CONNECT_DESC
-	EN	Should be the same as used for web access with addition of /api/ at the end like http://localhost:8123/api/
+	EN	Should be the same as used for web access like http://homeassistant.local:8123/
 
-PLUGIN_ASSISTANT_SHOW_HOME
-	EN	Show "home" in menu
+PLUGIN_ASSISTANT_ENABLED
+	EN	Enable Assistant plugin
 
-PLUGIN_ASSISTANT_SHOW_HOME_DESC
-	EN	By not showing "home" only groups will be shown for a cleaner looking menu.
+PLUGIN_ASSISTANT_ENABLE_DESC
+	EN	Enable and start the plugin requires connection URL and API password.
 
 PLUGIN_ASSISTANT_PASS
 	EN	Home Assistant API password

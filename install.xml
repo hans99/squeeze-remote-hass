@@ -3,7 +3,6 @@
   <name>PLUGIN_ASSISTANT</name>
   <creator>Hans Karlinius</creator>
   <defaultState>enabled</defaultState>
-  <needsMySB>false</needsMySB>
   <description>PLUGIN_ASSISTANT_DESCRIPTION</description>
   <email>hans.karlinius@live.com</email>
   <icon>plugins/Assistant/html/images/icon.png</icon>
@@ -11,9 +10,9 @@
   <module>Plugins::Assistant::Plugin</module>
   <optionsURL>plugins/Assistant/settings.html</optionsURL>
   <targetApplication>
-    <id>Logitech Media Server</id>
+    <id>Lyrion Media Server</id>
     <maxVersion>*</maxVersion>
-    <minVersion>7.6</minVersion>
+    <minVersion>9.0</minVersion>
   </targetApplication>
   <type>2</type>
   <version>0.8</version>
