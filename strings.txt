@@ -14,10 +14,40 @@ PLUGIN_ASSISTANT_ENABLED
 	EN	Enable Assistant plugin
 
 PLUGIN_ASSISTANT_ENABLE_DESC
-	EN	Enable and start the plugin requires connection URL and API password.
+	EN	Enable and start the plugin. Requires connection URL and a long-lived access token.
 
 PLUGIN_ASSISTANT_PASS
-	EN	Home Assistant API password
+	EN	Home Assistant Access Token
 
 PLUGIN_ASSISTANT_PASS_DESC
-	EN	The password set for http request, when logging in to the webpage
+	EN	A long-lived access token from Home Assistant (Profile → Long-Lived Access Tokens).
+
+PLUGIN_ASSISTANT_STATUS
+	EN	Connection status
+
+PLUGIN_ASSISTANT_STATUS_DESC
+	EN	Current connection state to Home Assistant. Updates after save / restart.
+
+PLUGIN_ASSISTANT_STATUS_DISABLED
+	EN	Assistant is not enabled. Enable it in Settings.
+
+PLUGIN_ASSISTANT_STATUS_CONNECTING
+	EN	Assistant is starting or not connected to Home Assistant.
+
+PLUGIN_ASSISTANT_STATUS_CONNECTED
+	EN	Connected and authenticated to Home Assistant.
+
+PLUGIN_ASSISTANT_STATUS_DISCONNECTED
+	EN	Not connected to Home Assistant.
+
+PLUGIN_ASSISTANT_STATUS_EMPTY
+	EN	No Home Assistant areas/entities available yet.
+
+PLUGIN_ASSISTANT_ERR_CONNECT_REQUIRED
+	EN	Home Assistant connect URL is required.
+
+PLUGIN_ASSISTANT_ERR_CONNECT_INVALID
+	EN	Connect URL must start with http:// or https://
+
+PLUGIN_ASSISTANT_ERR_TOKEN_REQUIRED
+	EN	Access token is required when the plugin is enabled.

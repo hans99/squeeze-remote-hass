@@ -1,15 +1,19 @@
 [% PROCESS settings/header.html %]
 
+	[% WRAPPER setting title="PLUGIN_ASSISTANT_STATUS" desc="PLUGIN_ASSISTANT_STATUS_DESC" %]
+		<div>[% assistant_status | html %]</div>
+	[% END %]
+
 	[% WRAPPER setting title="PLUGIN_ASSISTANT_CONNECT" desc="PLUGIN_ASSISTANT_CONNECT_DESC" %]
-		<input type="text" name="pref_connect" value="[% prefs.connect == '_assistant_' ? '' : prefs.connect %]" size="40">
+		<input type="text" name="pref_connect" value="[% prefs.connect %]" size="40">
 	[% END %]
 
 	[% WRAPPER setting title="PLUGIN_ASSISTANT_PASS" desc="PLUGIN_ASSISTANT_PASS_DESC" %]
-		<input type="text" name="pref_pass" value="[% prefs.pass == '_pass_' ? '' : prefs.pass %]">
+		<input type="password" name="pref_pass" value="[% prefs.pass %]" size="120" autocomplete="off">
 	[% END %]
 
 	[% WRAPPER setting title="PLUGIN_ASSISTANT_ENABLED" %]
-		<input type="checkbox" [% IF prefs.pref_enabled %]checked="checked"[% END %] class="stdedit" name="pref_enabled" id="pref_enabled" />
+		<input type="checkbox" [% IF prefs.enabled %]checked="checked"[% END %] class="stdedit" name="pref_enabled" id="pref_enabled" />
 		<label for="pref_enabled">[% "PLUGIN_ASSISTANT_ENABLE_DESC" | string %]</label>
 	[% END %]
 

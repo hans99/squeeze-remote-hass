@@ -26,41 +26,75 @@ use Slim::Utils::Prefs;
 
 my $log = logger('plugin.assistant');
 
+# Construct only — call connect() after the caller has stored the object so
+# early frames (e.g. HA auth_required) can already use $ws->send().
 sub new {
-	my ($class, $url, $cbConnected, $cbConnectFailed, $cbRead, $cbReadFailed) = @_;
+	my ($class) = @_;
 
 	my $self = {
-		client     => 0,
-		tcp_socket   => 0,
-		socket_open  => 0,
+		client             => 0,
+		tcp_socket         => 0,
+		socket_open        => 0,
 		continue_listening => 0,
-		cb_Read  => 0,
-		cb_Read_Failed => 0,
+		cb_Read            => 0,
+		cb_Read_Failed     => 0,
 	};
 
-	bless $self, $class;
-
-	$self->_connect( $url, $cbConnected, $cbConnectFailed, $cbRead, $cbReadFailed);
-
-	return $self;
+	return bless $self, $class;
 }
 
+# Returns true on successful handshake.
+sub connect {
+	my ($self, $url, $cbConnected, $cbConnectFailed, $cbRead, $cbReadFailed) = @_;
+
+	$self->_connect($url, $cbConnected, $cbConnectFailed, $cbRead, $cbReadFailed);
+
+	return ($self->{socket_open} && $self->{client}) ? 1 : 0;
+}
 
 sub close {
 	my ($self) = @_;
 
 	Slim::Utils::Timers::killTimers($self, \&_receive);
 
-	main::INFOLOG && $log->is_info && $log->info("Close web socket connect with status: " . $self->{tcp_socket}->connected() );
-
 	$self->{continue_listening} = 0;
-	$self->{client}->disconnect;
-	$self->{tcp_socket}->close if $self->{socket_open};
+	$self->{cb_Read} = 0;
+	$self->{cb_Read_Failed} = 0;
+
+	my $wasOpen = $self->{socket_open};
+	my $client = $self->{client};
+	my $tcp = $self->{tcp_socket};
+
+	# Mark closed first so write/disconnect callbacks no-op
 	$self->{socket_open} = 0;
+	$self->{client} = 0;
+	$self->{tcp_socket} = 0;
+
+	if ($wasOpen && $tcp) {
+		main::INFOLOG && $log->is_info && $log->info(
+			'Close web socket connect with status: ' . (eval { $tcp->connected() } || 0)
+		);
+	}
+
+	# Only send a WS close frame if we still believe the socket is writable.
+	# After a remote hangup, disconnect() would warn "write() on closed WebSocket".
+	if ($wasOpen && $client && $tcp && eval { $tcp->connected() }) {
+		eval { $client->disconnect; };
+	}
+	eval { $tcp->close if $tcp; };
 
 	return;
 }
 
+sub _fail {
+	my ($self, $msg) = @_;
+
+	$self->{continue_listening} = 0;
+	my $cb = $self->{cb_Read_Failed};
+	$self->{cb_Read_Failed} = 0;
+	$self->{cb_Read} = 0;
+	$cb->($msg) if $cb;
+}
 
 sub _connect {
 	my ($self, $url, $cbConnected, $cbConnectFailed, $cbRead, $cbReadFailed) = @_;
@@ -77,7 +111,7 @@ sub _connect {
 		$log->warn("Failed to parse $url");
 		$cbConnectFailed->("Failed to parse Host/Port for ws URL from $url");
 		return;
-	} elsif ($port == 433 ) {
+	} elsif ($port == 443) {
 		$proto = 'wss';
 	}
 
@@ -89,26 +123,30 @@ sub _connect {
 
 		$self->{tcp_socket} = IO::Socket::SSL->new(
 			PeerAddr => $host,
-			PeerPort => "$proto($port)",
+			PeerPort => $port,
 			Proto => 'tcp',
 			Blocking => 1,
 			SSL_startHandshake => 1,
-		) or $cbConnectFailed->("Failed to connect to socket: $!,$SSL_ERROR");
+		);
+		unless ($self->{tcp_socket}) {
+			$cbConnectFailed->("Failed to connect to socket: $!,$SSL_ERROR");
+			return;
+		}
 	} else {
 		$self->{tcp_socket} = IO::Socket::INET->new(
 			PeerAddr => $host,
-			PeerPort => "$proto($port)",
+			PeerPort => $port,
 			Proto => 'tcp',
 			Blocking => 1,
-		) or $cbConnectFailed->("Failed to connect to socket: $!");
+		);
+		unless ($self->{tcp_socket}) {
+			$cbConnectFailed->("Failed to connect to socket: $!");
+			return;
+		}
 	}
 
-	main::INFOLOG && $log->is_info && $log->info("Starting To Listen Async");
 	$self->{cb_Read} = $cbRead;
 	$self->{cb_Read_Failed} = $cbReadFailed;
-	$self->{continue_listening} = 1;
-	$self->_receive();
-
 
 	main::INFOLOG && $log->is_info && $log->info("Trying to create Protocol::WebSocket::Client handler for $url...");
 	$self->{client} = Protocol::WebSocket::Client->new(url => $url);
@@ -121,9 +159,7 @@ sub _connect {
 			my $client = shift;
 			my ($buf) = @_;
 
-			#main::DEBUGLOG && $log->is_debug && $log->debug("Sending $buf ...");
-
-			syswrite $self->{tcp_socket}, $buf if $self->{socket_open};
+			syswrite $self->{tcp_socket}, $buf if $self->{socket_open} && $self->{tcp_socket};
 		}
 	);
 
@@ -143,8 +179,10 @@ sub _connect {
 			my ($buf) = @_;
 
 			$log->error("ERROR ON WEBSOCKET: $buf");
-			$self->{tcp_socket}->close;
-			die "Websocket error, socket closed";
+			$self->{socket_open} = 0;
+			$self->{continue_listening} = 0;
+			eval { $self->{tcp_socket}->close if $self->{tcp_socket}; };
+			$self->_fail("Websocket error: $buf");
 		}
 	);
 
@@ -152,7 +190,7 @@ sub _connect {
 		read => sub {
 			my $client = shift;
 			my ($buf) = @_;
-			main::INFOLOG && $log->is_info && $log->info("Message Recieved : $buf");
+			main::DEBUGLOG && $log->is_debug && $log->debug("Message Recieved : $buf");
 
 			$self->_read($buf);
 		}
@@ -163,33 +201,39 @@ sub _connect {
 			my $client = shift;
 			my ($buf) = @_;
 			main::DEBUGLOG && $log->is_debug && $log->debug("Ping sent, sending pong : " . sprintf("%v02X", $buf));
-			$client->pong($buf);
+			$client->pong($buf) if $self->{socket_open};
 		}
 	);
 
 	main::INFOLOG && $log->is_info && $log->info("connecting to client");
 	$self->{client}->connect;
 
-	# read until handshake is complete.  This is blocking but should be over quickly.
-	while (!$self->{client}->{hs}->is_done){
+	# Read until handshake is complete. Blocking, but should finish quickly.
+	# HA often sends auth_required in the same burst — read callbacks may fire here.
+	while ($self->{client} && !$self->{client}->{hs}->is_done) {
 		my $recv_data;
 
-		#my $bytes_read = sysread $self->{tcp_socket}, $recv_data, 16384;
-		my $bytes_read = sysread $self->{tcp_socket}, $recv_data, 16;
-		#$log->debug('<DATA> ', $recv_data);
+		my $bytes_read = sysread $self->{tcp_socket}, $recv_data, 16384;
 
 		if (!defined $bytes_read) {
 			$log->error("sysread on tcp_socket failed: $!");
+			$self->close();
 			$cbConnectFailed->("WS Handshake failed");
 			return;
-		}elsif ($bytes_read == 0) {
+		} elsif ($bytes_read == 0) {
 			$log->error("Connection terminated.");
+			$self->close();
 			$cbConnectFailed->("WS Handshake failed");
 			return;
 		}
 
 		$self->{client}->read($recv_data);
 	}
+
+	# Start async receive loop only after handshake succeeds
+	$self->{continue_listening} = 1;
+	$self->_continueListen(0);
+
 	return;
 }
 
@@ -197,7 +241,7 @@ sub _connect {
 sub _read {
 	my ($self, $buf) = @_;
 
-	$self->{cb_Read}->($buf);
+	$self->{cb_Read}->($buf) if $self->{cb_Read};
 
 	return;
 }
@@ -208,79 +252,81 @@ sub _receive {
 	main::DEBUGLOG && $log->is_debug && $log->debug("Starting Listening");
 
 	eval {
-	if ($self->{continue_listening}) {
+		if ($self->{continue_listening} && $self->{tcp_socket} && $self->{client}) {
 
-		my $s = IO::Select->new();
-		$s->add($self->{tcp_socket});
-		$! = 0;
+			my $s = IO::Select->new();
+			$s->add($self->{tcp_socket});
+			$! = 0;
 
-		main::DEBUGLOG && $log->is_debug && $log->debug("Checking the socket for something to read");
-		my @ready = $s->can_read(0);
+			main::DEBUGLOG && $log->is_debug && $log->debug("Checking the socket for something to read");
+			my @ready = $s->can_read(0);
 
-		if (@ready) {
-			my $recv_data;
-			my $bytes_read = sysread $ready[0], $recv_data, 16384;
-			if (!defined $bytes_read) {
+			if (@ready) {
+				my $recv_data;
+				my $bytes_read = sysread $ready[0], $recv_data, 16384;
+				if (!defined $bytes_read) {
 
-				$log->error("Error reading from socket : $!");
-				$self->{cb_Read_Failed}->();
+					$log->error("Error reading from socket : $!");
+					$self->_fail("Error reading from socket: $!");
+					$self->close();
+
+				} elsif ($bytes_read == 0) {
+
+					# Remote socket closed — do not Protocol::WebSocket disconnect()
+					$log->error("Connection terminated by remote. $!");
+					$self->_fail("Connection terminated by remote");
+					$self->close();
+
+				} else {
+
+					main::DEBUGLOG && $log->is_debug && $log->debug("Received data : $recv_data ");
+					$self->{client}->read($recv_data) if $self->{socket_open} && $self->{client};
+
+					# Poll again soon so remaining buffered data is drained.
+					$self->_continueListen(0);
+				}
+
+			} else {
+
+				main::DEBUGLOG && $log->is_debug && $log->debug("No Data Present, continue listening");
 
 				# poll again in 1 second
 				$self->_continueListen(1);
 
-			} elsif ($bytes_read == 0) {
-
-				# Remote socket closed
-				$log->error("Connection terminated by remote. $!");
-
-				$self->{cb_Read_Failed}->();
-
-				close();
-
-			} else {
-
-				main::DEBUGLOG && $log->is_debug && $log->debug("Received data : $recv_data ");
-				$self->{client}->read($recv_data);
-
-				# if Async, poll immediately so that we pull everything off the socket if something is there.
-				$self->_continueListen(1);
-
 			}
-
-		} else {
-
-			main::DEBUGLOG && $log->is_debug && $log->debug("No Data Present, continue listening");
-
-			# poll again in 1 second
-			$self->_continueListen(1);
-
 		}
-	}
-		} or do {
-		my $e = $@;
+	} or do {
+		my $e = $@ || 'unknown error';
 		$log->error('Failed receive: ', $e);
-
-	}
+		$self->_fail("Failed receive: $e");
+		$self->close();
+	};
 }
 
 
 sub _continueListen {
 	my ($self, $pollTimeSeconds) = @_;
 
+	return unless $self->{continue_listening};
+
 	eval {
 		Slim::Utils::Timers::setTimer($self, time() + $pollTimeSeconds, \&_receive);
 	} or do {
-		my $e = $@;
+		my $e = $@ || 'unknown error';
 		$log->error('Failed timer: ', $e);
-
-	}
+	};
 }
 
 
 sub send {
 	my ($self, $buf) = @_;
 
-	main::INFOLOG && $log->is_info && $log->info("Sending on web socket : $buf ");
+	unless ($self->{client} && $self->{socket_open}) {
+		$log->error('Cannot send: websocket not open');
+		return;
+	}
+
+	main::DEBUGLOG && $log->is_debug && $log->debug("Sending on web socket : $buf ");
 	$self->{client}->write($buf);
 
 	return;
